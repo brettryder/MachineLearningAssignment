@@ -1,0 +1,75 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Brett Ryder"
+date: "Saturday, November 22, 2014"
+output: html_document
+---
+#Synopsis
+This paper uses the randomforests prediction package to predict how well participants do an exercise (namely dumbbell curls). Prediction is based on the data from a number of body movement sensors located at the waist, arm, forearm and dumbbell. The performance of the exercise was graded into 5 categories with Class A representing the correct performance of the exercise while the remaining 4 categories (B through to E) represented common mistakes in the performance of the exercise. There were six subjects in the data.
+
+The data for this exercise were obtained from: Velloso et al (2013) **Qualitative Activity Recognition of Weight Lifting Exercises**. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+setwd("~/Coursera/MachineLearning")
+library(caret)
+library(randomForest)
+```
+
+#Cleaning the Data
+The first step in constructing the model was to remove extraneous variable columns. These were the statistical averages of the activity monitor readings over time windows. However since the purpose of this paper is to examine the predictability of activity quality using instantaneous data rather than time averaged data, these columns were removed. This left 52 predictors. The data were divided into two components, a training set (consisting of 70 percent of the observations) and a test set consisting of the remaining 30 percent.
+
+```{r}
+data<-read.csv("pml-training.csv",header=TRUE,sep=",")
+#removing extraneous variable
+data1<-data[-c(1:7,12:36,50:59,69:83,87:101,103:112,125:139,141:150)]
+#Setting up training and testing data
+inTrain <- createDataPartition(y=data1$classe,p=0.7, list=FALSE)
+training <- data1[inTrain,]
+testing <- data1[-inTrain,]
+```
+
+#Model Construction
+The prediction method used was the randomforests package in R. Random forests involve growing a number of trees. For each tree bootstraping samples are used and at each split, the variables are bootstrapped. Finally each tree is weighted according to its prediction accuracy. Random forests are typically very accurate but can also be slow to calculate, difficult to interpret and are prone to overfitting.
+
+The results below indicate that the resulting model is quite accurate with the confusion matrix indicating that only a relatively small number of observations are misclassified.
+
+Due to the bootstrapping of the data, not all data are used in the construction of each tree. Therefore the data that is not used in the construction of that tree can be used to provide an estimate of the likely out of sample error rate. This is called the out-of-bag (OOB) error and in this case it is calculated at 0.005. **This should be an unbiased estimate of the true out of sample error rate**.
+
+```{r}
+modFit<-randomForest(classe~.,data=training,importance=TRUE)
+print(modFit)
+```
+#Cross Validation and Expected out of Sample Error
+Fitting a model in the training set will often lead to overfitting and an overoptimistic estimate of the true out of sample error rate. However the testing set cannot be used, otherwise, with repeated use, it will effectively become part of the testing data.
+
+Cross validation uses the training set in order to come up with a better estimate of the likely out of sample error rate. It typically does this by splitting the training set into one part or parts that are used to estimate the model and then a second part or parts that is used to calculate the out of sample error.
+
+The cross validation method used was 5 fold cross validation using the rfcv (Random Forest Cross-Validation) package. This package constructs multiple models, each with a different number of predictors and then calculates the out of sample error for each. This allows for another means of calculating the likely out of sample error. It also helps to determine the optimal number of predictors
+
+The chart below shows how the out of sample error rate decreases as the number of predictors increases. However for more than 15 predictors, the decrease in the error rate is relatively slow. Therefore a modest reduction in the number of predictors may be possible.
+
+For the baseline case where all 52 predictors are used, the cross validation error is 0.007 which is slightly higher than the 0.005 from the OBB error (although both are very small).
+
+```{r,results='asis',echo=FALSE, message=FALSE}
+#running cross validation
+result<-rfcv(training[,1:52],training$classe,cv.fold=5) 
+plot(result$n.var,result$error.cv,type="b",main="Cross Validation Results",xlab="number of predictors",ylab="error rate")
+```
+
+The table below shows the cross validation error for 52 down to 1 predictors.
+```{r,results='asis',echo=FALSE,message=FALSE}
+library(stargazer)
+stargazer(result$error.cv,type="html")
+```
+
+Finally the test set can be used to perform out of sample testing of the model. The resulting confusion matrix indicates that the model remains very accurate in a true out of sample test. The out of sample error rate is 0.0024. This is actually below the OBB error estimate (0.005) and the cross-validation rate (0.007). Therefore it does seem to be the case that the OBB error rate gives a relatively good prediction of the likely out of sample error and is there not biased downwards.
+```{r}
+pred<-predict(modFit,testing)
+confusionMatrix(pred,testing$classe)
+```
+
+
+#Conclusions
+The key conclusion from this exercise is that it is possible to predict whether an exercise is being performed correctly using instantaneous data from activity monitors. The results also are consistent with the proposition that the OBB error estimate gives an unbiased prediction of the likely true out of sample error rate.
+
+Further work could explore whether a smaller model (i.e. with fewer predictors) could perform as well as or even better than the full 53 predictor model used in this paper.
